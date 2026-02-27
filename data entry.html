@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFID School System - Final</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --success: #27ae60; --danger: #e74c3c; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 950px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: var(--primary); margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: 0.3s; text-transform: uppercase; }
+        input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 5px rgba(52, 152, 219, 0.3); }
+        .camera-section { text-align: center; background: #f9f9f9; padding: 15px; border-radius: 10px; border: 2px dashed #ddd; }
+        video { width: 100%; max-width: 320px; border-radius: 10px; background: #000; transform: scaleX(-1); }
+        #photoPreview { margin-top: 15px; }
+        #photoPreview img { width: 150px; border-radius: 8px; border: 3px solid var(--accent); }
+        .button-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }
+        button { padding: 12px; border: none; border-radius: 8px; cursor: pointer; color: white; font-weight: bold; transition: 0.3s; font-size: 14px; }
+        button:hover { opacity: 0.8; transform: translateY(-2px); }
+        .btn-conn { background: #8e44ad; } .btn-save { background: var(--success); }
+        .btn-edit { background: var(--accent); } .btn-del { background: var(--danger); }
+        .btn-search { background: var(--warning); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📇 سیستەمی بەڕێوەبردنی RFID</h1>
+
+    <div class="main-grid">
+        <div class="inputs">
+            <div class="form-group">
+                <label>ناوی تەواو:</label>
+                <input type="text" id="name" placeholder="ناوی قوتابی بنوسە...">
+            </div>
+            <div class="form-group">
+                <label>پۆل (Class):</label>
+                <input type="text" id="classInput" placeholder="پۆل بنوسە...">
+            </div>
+            <div class="form-group">
+                <label>ژمارەی کارت (ID):</label>
+                <input type="text" id="cardID" placeholder="کۆدی کارت لێرە بنوسە یان لێبدە...">
+            </div>
+            <div class="form-group">
+                <label>وێنە باربکە:</label>
+                <input type="file" id="fileInp" accept="image/*">
+            </div>
+        </div>
+
+        <div class="camera-section">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <button onclick="capture()" style="background:#333; width:100%; margin-top:10px;">گرتنی وێنە و داونلۆد 📸</button>
+            <div id="photoPreview"></div>
+        </div>
+    </div>
+
+    <div class="button-grid">
+        <button class="btn-conn" onclick="initSerial()">ڕەبتی ئاردوینۆ 🔌</button>
+        <button class="btn-save" onclick="saveData()">خەزنکردن 💾</button>
+        <button class="btn-search" onclick="searchData()">گەڕان 🔍</button>
+        <button class="btn-edit" onclick="updateData()">نوێکردنەوە 🔄</button>
+        <button class="btn-del" onclick="deleteData()">سڕینەوە 🗑️</button>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCNE5SrgyfTV6_6fieRCLaKPyAGk0ox-FM",
+        authDomain: "school-system-4d4da.firebaseapp.com",
+        projectId: "school-system-4d4da",
+        storageBucket: "school-system-4d4da.firebasestorage.app",
+        messagingSenderId: "554610137178",
+        appId: "1:554610137178:web:4b549d67471722030da063"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const video = document.getElementById('video');
+    navigator.mediaDevices.getUserMedia({ video: true }).then(s => video.srcObject = s);
+
+    window.capture = function() {
+        const canvas = document.getElementById('canvas');
+        const id = document.getElementById('cardID').value.trim() || "No_ID";
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const imgData = canvas.toDataURL('image/png');
+        document.getElementById('photoPreview').innerHTML = `<img src="${imgData}">`;
+        
+        const link = document.createElement('a');
+        link.download = `${id}.png`;
+        link.href = imgData;
+        link.click();
+    };
+
+    window.initSerial = async function() {
+        try {
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 9600 });
+            const decoder = new TextDecoderStream();
+            port.readable.pipeTo(decoder.writable);
+            const reader = decoder.readable.getReader();
+            let buffer = ""; 
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) {
+                    buffer += value;
+                    if (buffer.includes('\n') || buffer.includes('\r')) {
+                        const cleanID = buffer.replace(/[^a-zA-Z0-9]/g, '').trim().toUpperCase();
+                        if(cleanID) document.getElementById('cardID').value = cleanID;
+                        buffer = ""; 
+                    }
+                }
+            }
+        } catch (e) { alert("هەڵە لە سێریەڵ: " + e); }
+    };
+
+    window.saveData = async () => {
+        const id = document.getElementById('cardID').value.trim();
+        if(!id) return alert("تکایە ئایدی کارت بنوسە");
+        await setDoc(doc(db, "students", id), {
+            name: document.getElementById('name').value,
+            class: document.getElementById('classInput').value, // لێرە class بەکارهاتووە
+            cardID: id,
+            date: new Date().toLocaleDateString()
+        });
+        alert("بە سەرکەوتوویی خەزن کرا ✅");
+    };
+
+    window.searchData = async () => {
+        const id = document.getElementById('cardID').value.trim();
+        if(!id) return alert("ئایدی بنوسە بۆ گەڕان");
+        const snap = await getDoc(doc(db, "students", id));
+        if (snap.exists()) {
+            const data = snap.data();
+            document.getElementById('name').value = data.name || "";
+            document.getElementById('classInput').value = data.class || ""; // لێرە class وەردەگرێتەوە
+            alert("زانیاری دۆزرایەوە! 🔍");
+        } else { alert("نەدۆزرایەوە!"); }
+    };
+
+    window.updateData = async () => {
+        const id = document.getElementById('cardID').value.trim();
+        await setDoc(doc(db, "students", id), {
+            name: document.getElementById('name').value,
+            class: document.getElementById('classInput').value
+        }, { merge: true });
+        alert("نوێکرایەوە 🔄");
+    };
+
+    window.deleteData = async () => {
+        const id = document.getElementById('cardID').value.trim();
+        if(confirm("دڵنیای لە سڕینەوە؟")) {
+            await deleteDoc(doc(db, "students", id));
+            alert("سڕایەوە 🗑️");
+        }
+    };
+</script>
+</body>
+</html>
