@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بەڕێوبەرایەتی | Smart School Admin</title>
+    
+    <style>
+        :root { --primary: #1e293b; --accent: #3b82f6; --danger: #ef4444; --success: #10b981; --warning: #f59e0b; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f8fafc; margin: 0; color: #334155; }
+        
+        header { background: var(--primary); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        
+        .container { padding: 20px; max-width: 1200px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        .btn { padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; font-size: 0.9rem; }
+        .btn-blue { background: var(--accent); }
+        .btn-orange { background: var(--warning); }
+        .btn-green { background: var(--success); }
+        .btn-action { padding: 5px 10px; font-size: 0.8rem; margin: 2px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { padding: 12px; text-align: right; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; color: #475569; font-weight: bold; }
+
+        /* Modal - پەنجەرەی جۆینبوونی بەخێوکەران */
+        #parentsModal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; backdrop-filter: blur(4px); }
+        .modal-content { background:white; width:95%; max-width:900px; margin:40px auto; padding:25px; border-radius:15px; max-height:85vh; overflow-y:auto; position: relative; }
+        
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; display: inline-block; }
+        .on { background: #dcfce7; color: #166534; }
+        .off { background: #fee2e2; color: #991b1b; }
+
+        .date-input { padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-family: inherit; }
+
+        @media print { 
+            .no-print { display: none !important; } 
+            body { background: white; }
+            .card { box-shadow: none; border: 1px solid #eee; width: 100%; }
+            header { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="no-print">
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 1.5rem;">🛡️</span>
+        <h2 style="margin: 0;">کۆنتڕۆڵی بەڕێوبەر</h2>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <button class="btn btn-blue" onclick="openParentsModal()">📱 جۆینبوونی بەخێوکەران</button>
+        <button class="btn btn-orange" onclick="checkLongAbsence()">⚠️ غایبی سەرو ٦ ڕۆژ</button>
+    </div>
+</header>
+
+<div class="container">
+    <div class="card no-print" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <label><b>هەڵبژاردنی بەروار:</b> </label>
+            <input type="date" id="selectedDate" class="date-input" onchange="loadAttendance()">
+        </div>
+        <button class="btn btn-green" onclick="window.print()">🖨️ پرنتی ڕاپۆرت</button>
+    </div>
+
+    <div class="card">
+        <h3 id="reportTitle" style="margin-top: 0; color: var(--primary); border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📊 ئامادەبوونی ڕۆژ</h3>
+        <table id="attendanceTable">
+            <thead>
+                <tr>
+                    <th>ناوی قوتابی</th>
+                    <th>پۆل</th>
+                    <th>دۆخ</th>
+                    <th>کاتی هاتن</th>
+                    <th class="no-print">کردارەکان</th>
+                </tr>
+            </thead>
+            <tbody id="attendanceBody">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="parentsModal" class="no-print">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin:0;">📱 دۆخی پەیوەندی بەخێوکەران (Real-time)</h3>
+            <button onclick="closeParentsModal()" style="cursor:pointer; border:none; background:#eee; padding:5px 12px; border-radius:50%; font-size:1.2rem;">&times;</button>
+        </div>
+        <div id="stats" style="margin-bottom:15px; padding:10px; background:#f1f5f9; border-radius:8px; font-weight:bold; color:var(--accent);">باردەکرێت...</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ناوی قوتابی</th>
+                    <th>ئایدی کارت</th>
+                    <th>دۆخی پەیوەندی</th>
+                    <th>کۆتا بینین</th>
+                </tr>
+            </thead>
+            <tbody id="parentsTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, doc, getDocs, getDoc, setDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = { 
+        apiKey: "AIzaSyCNE5SrgyfTV6_6fieRCLaKPyAGk0ox-FM", 
+        authDomain: "school-system-4d4da.firebaseapp.com", 
+        projectId: "school-system-4d4da", 
+        appId: "1:554610137178:web:4b549d67471722030da063" 
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // دیاریکردنی بەرواری ئەمڕۆ
+    document.getElementById('selectedDate').valueAsDate = new Date();
+
+    // ١. بارکردنی لیستی ئامادەبوون
+    async function loadAttendance() {
+        const date = document.getElementById('selectedDate').value;
+        document.getElementById('reportTitle').innerText = `📊 ڕاپۆرتی ڕۆژی (${date})`;
+        const tbody = document.getElementById("attendanceBody");
+        tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;'>چاوەڕێبە...</td></tr>";
+
+        try {
+            const allStudentsSnap = await getDocs(collection(db, "students"));
+            const presentSnap = await getDocs(collection(db, "Attendance", date, "Present"));
+            const absentSnap = await getDocs(collection(db, "Attendance", date, "Absent"));
+
+            // ئەگەر ڕۆژەکە پشوو بوو یان داتای تێدا نەبوو
+            if (presentSnap.empty && absentSnap.empty) {
+                tbody.innerHTML = "<tr><td colspan='5' style='text-align:center; color:#94a3b8; padding:40px;'>لەم بەروارەدا هیچ زانیارییەک تۆمار نەکراوە (پشوو یان نەبوونی دەوام)</td></tr>";
+                return;
+            }
+
+            const presentList = {}; presentSnap.forEach(d => presentList[d.id] = d.data());
+            const absentList = {}; absentSnap.forEach(d => absentList[d.id] = d.data());
+
+            tbody.innerHTML = "";
+            allStudentsSnap.forEach(stDoc => {
+                const st = stDoc.data();
+                const id = st.cardID;
+                let status = "نەهاتوو";
+                let time = "---";
+                let rowColor = "#ef4444"; // سوور بۆ غایب
+
+                if (presentList[id]) {
+                    status = presentList[id].status || "ئامادە";
+                    time = presentList[id].time || "نادیار";
+                    rowColor = status === "ئامادە" ? "#10b981" : "#f59e0b"; // سەوز بۆ ئامادە، پرتەقاڵی بۆ مۆڵەت
+                } else if (absentList[id]) {
+                    status = "غایب";
+                    time = "تۆمارکراو";
+                } else {
+                    status = "چاوەڕوان";
+                    rowColor = "#94a3b8";
+                }
+
+                tbody.innerHTML += `
+                    <tr style="color: ${rowColor};">
+                        <td style="color:#1e293b; font-weight:500;">${st.name}</td>
+                        <td>${st.class || "--"}</td>
+                        <td><b>${status}</b></td>
+                        <td dir="ltr" style="text-align:right;">${time}</td>
+                        <td class="no-print">
+                            <button class="btn btn-blue btn-action" onclick="updateStatus('${id}', 'مۆڵەت')">مۆڵەت</button>
+                            <button class="btn btn-orange btn-action" onclick="updateStatus('${id}', 'بیرچوو')">بیرچوو</button>
+                        </td>
+                    </tr>`;
+            });
+        } catch (error) {
+            console.error(error);
+            tbody.innerHTML = "<tr><td colspan='5'>هەڵەیەک لە وەرگرتنی داتا ڕوویدا</td></tr>";
+        }
+    }
+
+    // ٢. نوێکردنەوەی دۆخ بۆ مۆڵەت یان بیرچوو
+    window.updateStatus = async (id, newStatus) => {
+        const date = document.getElementById('selectedDate').value;
+        const q = query(collection(db, "students"), where("cardID", "==", id));
+        const snap = await getDocs(q);
+        if (snap.empty) return;
+        const stData = snap.docs[0].data();
+
+        await setDoc(doc(db, "Attendance", date, "Present", id), {
+            name: stData.name,
+            status: newStatus,
+            time: new Date().toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })
+        });
+        loadAttendance();
+    };
+
+    // ٣. مۆداڵی جۆینبوونی بەخێوکەران
+    window.openParentsModal = async function() {
+        document.getElementById('parentsModal').style.display = 'block';
+        const tbody = document.getElementById("parentsTableBody");
+        const stuSnap = await getDocs(collection(db, "students"));
+        const students = [];
+        stuSnap.forEach(doc => students.push(doc.data()));
+
+        onSnapshot(collection(db, "ConnectedParents"), (snapshot) => {
+            const connectedData = {};
+            snapshot.forEach(doc => connectedData[doc.id] = doc.data());
+            
+            tbody.innerHTML = "";
+            let onlineCount = 0;
+            students.forEach(s => {
+                const conn = connectedData[s.cardID];
+                const isOnline = conn && conn.status === "Online";
+                if (isOnline) onlineCount++;
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${s.name}</td>
+                        <td><code>${s.cardID}</code></td>
+                        <td>
+                            <span class="badge ${isOnline ? 'on' : 'off'}">
+                                ${conn ? (isOnline ? '● ئۆنلاین' : '○ ئۆفلاین') : '❌ جۆین نییە'}
+                            </span>
+                        </td>
+                        <td style="font-size:0.85rem; color:#64748b;">${conn ? conn.lastSeen : '---'}</td>
+                    </tr>`;
+            });
+            document.getElementById('stats').innerText = `کۆی قوتابیان: ${students.length} | جۆینبوو: ${snapshot.size} | ئێستا ئۆنلاین: ${onlineCount}`;
+        });
+    }
+
+    window.closeParentsModal = () => {
+        document.getElementById('parentsModal').style.display = 'none';
+    };
+
+    // ٤. پشکنینی غایبی سەرو ٦ ڕۆژ
+    window.checkLongAbsence = async () => {
+        alert("سیستەمەکە دەستی کرد بە پشکنینی مێژووی غایبات...");
+        const studentsSnap = await getDocs(collection(db, "students"));
+        const attendanceRef = collection(db, "Attendance");
+        const daysSnap = await getDocs(attendanceRef);
+        
+        let results = [];
+        for (const stDoc of studentsSnap.docs) {
+            const st = stDoc.data();
+            let count = 0;
+            for (const dayDoc of daysSnap.docs) {
+                const absDoc = await getDoc(doc(db, "Attendance", dayDoc.id, "Absent", st.cardID));
+                if (absDoc.exists()) count++;
+            }
+            if (count > 6) results.push(`${st.name}: ${count} ڕۆژ`);
+        }
+
+        if (results.length > 0) {
+            alert("قوتابیانی غایب (سەرو ٦ ڕۆژ):\n\n" + results.join("\n"));
+        } else {
+            alert("هیچ قوتابییەک سەرو ٦ ڕۆژ غایب نییە.");
+        }
+    }
+
+    // دەستپێکردنی وێبەکە
+    window.loadAttendance = loadAttendance;
+    loadAttendance();
+
+</script>
+
+</body>
+</html>
