@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پۆرتاڵی بەخێوکەران | Smart School</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="https://via.placeholder.com/192/2563eb/ffffff?text=School">
+
+    <style>
+        :root { --bg: #f1f5f9; --card: #ffffff; --primary: #2563eb; --success: #10b981; --danger: #ef4444; --warning: #eab308; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+        
+        .card { background: var(--card); padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 90%; max-width: 380px; text-align: center; border: 1px solid #e2e8f0; position: relative; }
+        
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #e2e8f0; border-radius: 10px; text-align: center; font-size: 1rem; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; width: 100%; font-weight: bold; font-size: 1rem; }
+
+        .status-box { display: none; margin-top: 20px; padding: 25px; border-radius: 15px; border: 2px solid transparent; animation: fadeIn 0.5s ease; }
+        .present { background: #dcfce7; color: #166534; border-color: var(--success); }
+        .absent { background: #fee2e2; color: #991b1b; border-color: var(--danger); }
+        .waiting { background: #fef9c3; color: #854d0e; border-color: var(--warning); }
+        
+        /* ستایلی ئاگادارکردنەوەی هاوشێوەی ناڤکەیشن */
+        .push-notif { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 350px; background: white; padding: 15px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px; z-index: 9999; transition: top 0.5s ease; border-right: 5px solid var(--danger); }
+        .push-notif.show { top: 20px; }
+
+        .install-btn { display: none; background: #1e293b; margin-top: 10px; font-size: 0.8rem; }
+        .logout { font-size: 0.85rem; color: #94a3b8; cursor: pointer; margin-top: 25px; text-decoration: underline; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="customNotif" class="push-notif">
+        <div style="background:var(--danger); color:white; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;">⚠️</div>
+        <div style="text-align:right;">
+            <b style="display:block; font-size:0.9rem;">ئاگاداری نوێ</b>
+            <span id="notifMsg" style="font-size:0.8rem; color:#64748b;">منداڵەکەت بە غایب تۆمار کرا</span>
+        </div>
+    </div>
+
+    <div id="loginArea" class="card">
+        <h2>بەخێربێیت</h2>
+        <p>ئایدی کارتی قوتابی بنووسە</p>
+        <input type="text" id="studentID" placeholder="Card ID">
+        <button onclick="login()">داخڵبوون</button>
+        <button id="installBtn" class="install-btn" onclick="installPWA()">📥 دابەزاندنی ئەپی قوتابخانە</button>
+    </div>
+
+    <div id="statusArea" class="card" style="display: none;">
+        <h2 id="stName">ناو</h2>
+        <p id="stClass">پۆل</p>
+        <div id="statusIndicator" class="status-box">
+            <span id="statusText" style="font-size: 1.4rem; font-weight: bold;">--</span>
+            <span id="arrivalTime" style="display:block; margin-top:10px;">--</span>
+        </div>
+        <div class="logout" onclick="logout()">گۆڕینی ئایدی 🔃</div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs, onSnapshot, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = { 
+        apiKey: "AIzaSyCNE5SrgyfTV6_6fieRCLaKPyAGk0ox-FM", 
+        authDomain: "school-system-4d4da.firebaseapp.com", 
+        projectId: "school-system-4d4da", 
+        appId: "1:554610137178:web:4b549d67471722030da063" 
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    let today = new Date().toISOString().split('T')[0];
+    let lastStatus = "";
+
+    // داواکردنی ڕێگەپێدانی نۆتفیکەیشن
+    if ("Notification" in window) {
+        Notification.requestPermission();
+    }
+
+    const savedID = localStorage.getItem('parent_student_id');
+    if (savedID) showStatus(savedID);
+
+    window.login = async function() {
+        const idInput = document.getElementById('studentID').value.trim().toUpperCase();
+        if (!idInput) return alert("ئایدی بنووسە");
+        const q = query(collection(db, "students"), where("cardID", "==", idInput));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            localStorage.setItem('parent_student_id', idInput);
+            showStatus(idInput);
+        } else { alert("ئەم ئایدییە نییە!"); }
+    };
+
+    async function showStatus(id) {
+        document.getElementById('loginArea').style.display = 'none';
+        document.getElementById('statusArea').style.display = 'block';
+
+        const q = query(collection(db, "students"), where("cardID", "==", id));
+        const snap = await getDocs(q);
+        const stData = snap.docs[0].data();
+        document.getElementById('stName').innerText = stData.name;
+        document.getElementById('stClass').innerText = "پۆلی: " + (stData.class || "--");
+
+        // تۆمارکردنی ئۆنلاین بوون
+        setDoc(doc(db, "ConnectedParents", id), {
+            name: stData.name, status: "Online", lastSeen: new Date().toLocaleString()
+        }, { merge: true });
+
+        // چاوڕێکردنی گۆڕانکاری دۆخی قوتابی
+        onSnapshot(doc(db, "Attendance", today, "Present", id), (pSnap) => {
+            if (pSnap.exists()) { updateUI("present", "گەیشتووە ✅", "کات: " + pSnap.data().time); }
+            else {
+                onSnapshot(doc(db, "Attendance", today, "Absent", id), (aSnap) => {
+                    if (aSnap.exists()) { updateUI("absent", "غایبە ❌", "نەهاتووە بۆ قوتابخانە"); }
+                    else { updateUI("waiting", "هێشتا نەگەیشتووە ⏳", "لە چاوەڕوانیداین..."); }
+                });
+            }
+        });
+    }
+
+    function updateUI(cls, txt, time) {
+        const box = document.getElementById('statusIndicator');
+        box.style.display = 'block';
+        box.className = "status-box " + cls;
+        document.getElementById('statusText').innerText = txt;
+        document.getElementById('arrivalTime').innerText = time;
+
+        // ئەگەر غایب بوو و پێشتر غایب نەبوو، نۆتفیکەیشن بنێرە
+        if (cls === "absent" && lastStatus !== "absent") {
+            triggerNotification("ئاگاداری غایب بوون", "منداڵەکەت ئەمڕۆ بە غایب تۆمار کرا");
+        }
+        lastStatus = cls;
+    }
+
+    function triggerNotification(title, msg) {
+        // نۆتفیکەیشنی ناو وێب
+        const notif = document.getElementById('customNotif');
+        document.getElementById('notifMsg').innerText = msg;
+        notif.classList.add('show');
+        setTimeout(() => notif.classList.remove('show'), 5000);
+
+        // نۆتفیکەیشنی مۆبایل (بۆ کاتێک کە وێبەکە لە باکگراوندە)
+        if (Notification.permission === "granted") {
+            new Notification(title, { body: msg, icon: "https://via.placeholder.com/128/ef4444/ffffff?text=!" });
+        }
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+
+    window.logout = function() {
+        localStorage.removeItem('parent_student_id');
+        location.reload();
+    };
+</script>
+
+<script>
+    // کۆدی Add to Home Screen
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('installBtn').style.display = 'block';
+    });
+
+    async function installPWA() {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt = null;
+        }
+    }
+</script>
+</body>
+</html>
