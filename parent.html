@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پۆرتاڵی بەخێوکەران</title>
+    <style>
+        :root { --bg: #f1f5f9; --card: #ffffff; --primary: #2563eb; --success: #10b981; --danger: #ef4444; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: var(--card); padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 90%; max-width: 380px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border: 2px solid #e2e8f0; border-radius: 10px; text-align: center; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; width: 100%; font-weight: bold; }
+        .status-box { display: none; margin-top: 20px; padding: 20px; border-radius: 15px; border: 2px solid transparent; }
+        .present { background: #dcfce7; color: #166534; border-color: var(--success); }
+        .absent { background: #fee2e2; color: #991b1b; border-color: var(--danger); }
+        .waiting { background: #fef9c3; color: #854d0e; border-color: #eab308; }
+        .logout { font-size: 0.8rem; color: #64748b; cursor: pointer; margin-top: 20px; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div id="loginArea" class="card">
+    <h2>چوونەژوورەوە</h2>
+    <p>ئایدی کارتی قوتابی بنووسە</p>
+    <input type="text" id="studentID" placeholder="Card ID">
+    <button onclick="login()">بچۆ ژوورەوە</button>
+</div>
+
+<div id="statusArea" class="card" style="display: none;">
+    <h2 id="stName">--</h2>
+    <p id="stClass">--</p>
+    <div id="statusIndicator" class="status-box">
+        <span id="statusText" style="font-size: 1.3rem; font-weight: bold;">--</span><br>
+        <span id="arrivalTime">--</span>
+    </div>
+    <div class="logout" onclick="logout()">گۆڕینی ئایدی 🔃</div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs, onSnapshot, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = { 
+        apiKey: "AIzaSyCNE5SrgyfTV6_6fieRCLaKPyAGk0ox-FM", 
+        authDomain: "school-system-4d4da.firebaseapp.com", 
+        projectId: "school-system-4d4da", 
+        appId: "1:554610137178:web:4b549d67471722030da063" 
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    let today = new Date().toISOString().split('T')[0];
+
+    // ١. پشکنین ئەگەر پێشتر داخڵبووە
+    const savedID = localStorage.getItem('parent_student_id');
+    if (savedID) showStatus(savedID);
+
+    window.login = async function() {
+        const id = document.getElementById('studentID').value.trim().toUpperCase();
+        if (!id) return alert("تکایە ئایدی بنووسە");
+
+        // گەڕان بەدوای قوتابی بەپێی cardID نەک بەپێی ناوی دۆکیومێنت
+        const q = query(collection(db, "students"), where("cardID", "==", id));
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+            localStorage.setItem('parent_student_id', id);
+            showStatus(id);
+        } else {
+            alert("ئەم ئایدییە لە سیستەم نییە!");
+        }
+    }
+
+    async function showStatus(id) {
+        document.getElementById('loginArea').style.display = 'none';
+        document.getElementById('statusArea').style.display = 'block';
+
+        // هێنانی ناوی قوتابی
+        const q = query(collection(db, "students"), where("cardID", "==", id));
+        const snap = await getDocs(q);
+        const stData = snap.docs[0].data();
+        document.getElementById('stName').innerText = stData.name;
+        document.getElementById('stClass').innerText = "پۆلی: " + (stData.class || "--");
+
+        // چاودێری کردنی ئامادەبوونی ئەمڕۆ (Real-time)
+        // پشکنینی بەشی Present
+        onSnapshot(doc(db, "Attendance", today, "Present", id), (pSnap) => {
+            if (pSnap.exists()) {
+                updateUI("present", "گەیشتووە ✅", "کات: " + pSnap.data().time);
+            } else {
+                // ئەگەر ئامادە نەبوو، پشکنین بۆ Absent
+                onSnapshot(doc(db, "Attendance", today, "Absent", id), (aSnap) => {
+                    if (aSnap.exists()) {
+                        updateUI("absent", "غایبە ❌", "نەهاتووە بۆ قوتابخانە");
+                    } else {
+                        updateUI("waiting", "هێشتا نەگەیشتووە ⏳", "لە چاوەڕوانیداین...");
+                    }
+                });
+            }
+        });
+    }
+
+    function updateUI(cls, txt, time) {
+        const box = document.getElementById('statusIndicator');
+        box.style.display = 'block';
+        box.className = "status-box " + cls;
+        document.getElementById('statusText').innerText = txt;
+        document.getElementById('arrivalTime').innerText = time;
+    }
+
+    window.logout = function() {
+        localStorage.removeItem('parent_student_id');
+        location.reload();
+    }
+</script>
+</body>
+</html>
