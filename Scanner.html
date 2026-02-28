@@ -24,12 +24,12 @@
         /* Main Content */
         .main-content { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
         .stu-display { background: var(--card); width: 420px; padding: 40px; border-radius: 35px; text-align: center; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 25px 50px rgba(0,0,0,0.5); }
-        .stu-img { width: 180px; height: 180px; border-radius: 50%; border: 6px solid var(--accent); object-fit: cover; background: #000; margin-bottom: 20px; }
+        .stu-img { width: 180px; height: 180px; border-radius: 50%; border: 6px solid var(--accent); object-fit: cover; background: #000; margin-bottom: 20px; transition: 0.3s; }
         
         .btn { color: white; border: none; padding: 12px 25px; border-radius: 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-arduino { background: #475569; position: absolute; top: 30px; left: 30px; border: 1px dashed var(--accent); }
         .btn-finish { background: var(--danger); width: 100%; margin-top: 15px; padding: 18px; font-size: 1.1rem; }
-        #scanFeedback { font-size: 1.2rem; min-height: 30px; margin-top: 10px; }
+        #scanFeedback { font-size: 1.2rem; min-height: 30px; margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -74,14 +74,14 @@
     let currentAbsentList = [];
 
     async function init() {
-        // ١. هێنانی هەموو قوتابیان بۆ ناسینەوەی کارتەکان
+        // ١. وەرگرتنی لیستی قوتابیان
         const snap = await getDocs(collection(db, "students"));
         allStudents = snap.docs.map(d => ({
             ...d.data(), 
             searchID: String(d.data().cardID).trim().toUpperCase() 
         }));
         
-        // ٢. چاودێری کردنی بەشی "Present" بۆ ڕۆژی دیاریکراو
+        // ٢. نوێکردنەوەی ئامادەبووان بە شێوەی ڕاستەوخۆ
         const presentRef = collection(db, "Attendance", today, "Present");
         onSnapshot(presentRef, (s) => {
             const presentIDs = s.docs.map(d => String(d.id).trim().toUpperCase());
@@ -114,32 +114,42 @@
 
         if (st) {
             document.getElementById('stuName').innerText = st.name;
-            document.getElementById('stuClass').innerText = "پۆلی: " + (st.class || "");
-            document.getElementById('stuImg').src = `images/${st.photoName || "default.jpg"}`;
+            document.getElementById('stuClass').innerText = "پۆلی: " + (st.class || "---");
+            
+            // بانگکردنی وێنە لە فۆڵدەری images ناوخۆیی
+            // ئەگەر لە فایەربەیس ناوی وێنەکە هەبوو ئەوە بەکاردێنێ، ئەگەر نا default.jpg
+            const photoFileName = st.photoName || "default.jpg";
+            document.getElementById('stuImg').src = `images/${photoFileName}`;
+            
             const feedback = document.getElementById('scanFeedback');
             feedback.innerText = "ئامادە کرا ✅";
             feedback.style.color = "var(--success)";
-            setTimeout(() => feedback.innerText = "", 3000);
+            
+            // تۆمارکردنی کات و دۆخ
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
 
-            // تۆمارکردن لە: Attendance -> [Today] -> Present -> [CardID]
             const docRef = doc(db, "Attendance", today, "Present", st.cardID.toString());
             await setDoc(docRef, { 
                 name: st.name, 
                 class: st.class || "", 
-                time: new Date().toLocaleTimeString('en-GB') 
+                time: timeString,
+                status: "ئامادە"
             });
+
+            setTimeout(() => { feedback.innerText = ""; }, 3000);
         } else {
             const feedback = document.getElementById('scanFeedback');
-            feedback.innerText = "ئایدی (" + id + ") تۆمار نییە! ❌";
+            feedback.innerText = "ئایدی نادیار! ❌";
             feedback.style.color = "var(--danger)";
+            document.getElementById('stuImg').src = "images/default.jpg";
         }
     };
 
     window.finishDay = async () => {
-        if (currentAbsentList.length === 0) return alert("هیچ غایبێک نییە.");
-        if (confirm(`ئایا دڵنیای؟ ${currentAbsentList.length} قوتابی غایب دەکرێن.`)) {
+        if (currentAbsentList.length === 0) return alert("هیچ غایبێک نەماوە.");
+        if (confirm(`ئایا دڵنیای لە کۆتاییهێنان؟ ${currentAbsentList.length} قوتابی بە غایب تۆمار دەکرێن.`)) {
             for (const st of currentAbsentList) {
-                // تۆمارکردن لە: Attendance -> [Today] -> Absent -> [CardID]
                 const docRef = doc(db, "Attendance", today, "Absent", st.cardID.toString());
                 await setDoc(docRef, {
                     name: st.name,
@@ -147,7 +157,7 @@
                     status: "غایب"
                 });
             }
-            alert("تەواو! هەموو غایبەکان لە بەشی Absent تۆمار کران.");
+            alert("ڕاپۆرتی ڕۆژ داخرا و غایبەکان تۆمارکران.");
         }
     };
 
@@ -155,6 +165,7 @@
 </script>
 
 <script>
+    /* بەشی پەیوەستکردنی ئاردینۆ */
     let port;
     let reader;
 
@@ -164,15 +175,12 @@
             try {
                 port = await navigator.serial.requestPort();
                 await port.open({ baudRate: 9600 });
-                btn.innerText = "❌ دیسکۆنێکت (ئاردینۆ)";
+                btn.innerText = "❌ پچڕاندنی ئاردینۆ";
                 btn.style.background = "var(--danger)";
                 readSerial();
-            } catch (e) { alert("پەیوەست نەکرا!"); }
+            } catch (e) { alert("هەڵە: پەیوەست نەکرا!"); }
         } else {
-            // باشترین ڕێگە بۆ دیسکۆنێکت کردن بەبێ قوفڵ بوونی پۆرتەکە
-            if(confirm("ئایا دەتەوێت پەیوەندییەکە بپچڕێنیت؟")) {
-                location.reload();
-            }
+            location.reload(); 
         }
     }
 
